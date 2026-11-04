@@ -15,7 +15,9 @@ router.get("/", async (req, res) => {
         res.json(resources);
     } catch (error) {
         console.error("Get resources error:", error);
-        res.status(500).json({ message: "Unable to fetch resources" });
+        res.status(500).json({
+            message: "Unable to fetch resources"
+        });
     }
 });
 
@@ -28,30 +30,46 @@ router.post("/requests", async (req, res) => {
             resourceType,
             quantity,
             bloodGroup,
-            contact
+            contact,
+            email
         } = req.body;
 
         const finalHospitalName = hospitalName || hospital;
 
+        // Check required fields
         if (
             !finalHospitalName ||
             !resourceType ||
             quantity === undefined ||
             quantity === null ||
             Number(quantity) < 1 ||
-            !contact
+            !contact ||
+            !email
         ) {
             return res.status(400).json({
                 message: "Please provide all required details"
             });
         }
 
+        // Validate email
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!emailPattern.test(email)) {
+            return res.status(400).json({
+                message: "Please enter a valid email address"
+            });
+        }
+
+        // Save request in Firebase
         const docRef = await db.collection("resourceRequests").add({
             hospitalName: finalHospitalName,
             resourceType,
             quantity: Number(quantity),
-            bloodGroup: resourceType === "Blood" ? (bloodGroup || null) : null,
+            bloodGroup: resourceType === "Blood"
+                ? (bloodGroup || null)
+                : null,
             contact,
+            email,
             status: "Pending",
             createdAt: new Date()
         });
