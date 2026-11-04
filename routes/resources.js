@@ -1,111 +1,74 @@
-// RESOURCE REQUEST FORM HANDLING
-const resourceForms = document.querySelectorAll("[data-resource-form]");
+const express = require("express");
+const router = express.Router();
+const { db } = require("../config/firebase");
 
-resourceForms.forEach(function (form) {
-
-const resourceTypeInput = form.querySelector("#resourceType");
-const bloodGroupInput = form.querySelector("#bloodGroup");
-
-// Blood group is required only for blood requests.
-if (resourceTypeInput && bloodGroupInput) {
-
-    resourceTypeInput.addEventListener("change", function () {
-
-        if (resourceTypeInput.value === "Blood") {
-            bloodGroupInput.required = true;
-        } else {
-            bloodGroupInput.required = false;
-            bloodGroupInput.value = "";
-        }
-    });
-}
-
-form.addEventListener("submit", async function (event) {
-    event.preventDefault();
-
-    const message = form.querySelector(".form-message");
-
-    if (!form.checkValidity()) {
-        form.reportValidity();
-        return;
-    }
-
-    if (APP_CONFIG.DEMO_MODE) {
-        if (message) {
-            message.textContent =
-                "Demo only: Your resource request has not been saved.";
-
-            message.style.color = "#52644b";
-        }
-
-        return;
-    }
-
+// Get available resources
+router.get("/", async (req, res) => {
     try {
-        if (message) {
-            message.textContent = "Submitting your resource request...";
-            message.style.color = "#52644b";
+        const snapshot = await db.collection("resources").get();
+
+        const resources = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        res.json(resources);
+    } catch (error) {
+        console.error("Get resources error:", error);
+        res.status(500).json({ message: "Unable to fetch resources" });
+    }
+});
+
+// Submit a resource request
+router.post("/requests", async (req, res) => {
+    try {
+        const {
+            hospital,
+            hospitalName,
+            resourceType,
+            quantity,
+            bloodGroup,
+            contact
+        } = req.body;
+
+        const finalHospitalName = hospitalName || hospital;
+
+        if (
+            !finalHospitalName ||
+            !resourceType ||
+            quantity === undefined ||
+            quantity === null ||
+            Number(quantity) < 1 ||
+            !contact
+        ) {
+            return res.status(400).json({
+                message: "Please provide all required details"
+            });
         }
 
-        const resourceData = Object.fromEntries(
-            new FormData(form).entries()
-        );
+        const docRef = await db.collection("resourceRequests").add({
+            hospitalName: finalHospitalName,
+            resourceType,
+            quantity: Number(quantity),
+            bloodGroup: resourceType === "Blood" ? (bloodGroup || null) : null,
+            contact,
+            status: "Pending",
+            createdAt: new Date()
+        });
 
-        // Match the backend field name.
-        resourceData.hospitalName = resourceData.hospital;
-        delete resourceData.hospital;
-
-        resourceData.quantity = Number(resourceData.quantity);
-
-        // Blood group is not applicable to oxygen requests.
-        if (resourceData.resourceType === "Oxygen cylinders") {
-            resourceData.bloodGroup = null;
-        }
-
-        const response = await fetch(
-            `${APP_CONFIG.API_BASE_URL}${APP_CONFIG.API_ENDPOINTS.RESOURCE_REQUESTS}`,
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(resourceData)
-            }
-        );
-
-        const result = await response.json();
-
-        if (!response.ok) {
-            throw new Error(
-                result.message || "Unable to submit resource request."
-            );
-        }
-
-        if (message) {
-            message.textContent =
-                result.message ||
-                "Resource request submitted successfully.";
-
-            message.style.color = "green";
-        }
-
-        form.reset();
-
-        if (bloodGroupInput) {
-            bloodGroupInput.required = false;
-        }
+        res.status(201).json({
+            success: true,
+            message: "Resource request submitted successfully",
+            id: docRef.id
+        });
 
     } catch (error) {
-        console.error("Resource request submission error:", error);
+        console.error("Resource request error:", error);
 
-        if (message) {
-            message.textContent =
-                error.message ||
-                "Something went wrong. Please try again.";
-
-            message.style.color = "red";
-        }
+        res.status(500).json({
+            message: "Unable to submit resource request"
+        });
     }
 });
 
-});
+module.exports = router;
