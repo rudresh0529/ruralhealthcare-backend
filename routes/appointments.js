@@ -24,20 +24,40 @@ router.post("/", async (req, res) => {
         const {
             patientName,
             phone,
+            email,
             hospital,
             doctor,
             preferredDate
         } = req.body;
 
-        if (!patientName || !phone || !hospital || !doctor || !preferredDate) {
+        // Validate all required details
+        if (
+            !patientName ||
+            !phone ||
+            !email ||
+            !hospital ||
+            !doctor ||
+            !preferredDate
+        ) {
             return res.status(400).json({
                 message: "Please provide all appointment details"
             });
         }
 
+        // Validate email format
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!emailPattern.test(email)) {
+            return res.status(400).json({
+                message: "Please enter a valid email address"
+            });
+        }
+
+        // Save appointment in Firebase
         const docRef = await db.collection("appointments").add({
             patientName,
             phone,
+            email,
             hospital,
             doctor,
             preferredDate,
@@ -46,11 +66,17 @@ router.post("/", async (req, res) => {
         });
 
         res.status(201).json({
-            message: "Appointment request submitted",
+            success: true,
+            message: "Appointment request submitted successfully",
             id: docRef.id
         });
+
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error("Appointment submission error:", error);
+
+        res.status(500).json({
+            message: error.message
+        });
     }
 });
 
