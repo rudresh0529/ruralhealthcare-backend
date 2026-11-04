@@ -1,57 +1,111 @@
-const express = require("express");
-const router = express.Router();
-const { db } = require("../config/firebase");
+// RESOURCE REQUEST FORM HANDLING
+const resourceForms = document.querySelectorAll("[data-resource-form]");
 
-// Get available resources
-router.get("/", async (req, res) => {
-    try {
-        const snapshot = await db.collection("resources").get();
+resourceForms.forEach(function (form) {
 
-        const resources = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
+const resourceTypeInput = form.querySelector("#resourceType");
+const bloodGroupInput = form.querySelector("#bloodGroup");
 
-        res.json(resources);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+// Blood group is required only for blood requests.
+if (resourceTypeInput && bloodGroupInput) {
+
+    resourceTypeInput.addEventListener("change", function () {
+
+        if (resourceTypeInput.value === "Blood") {
+            bloodGroupInput.required = true;
+        } else {
+            bloodGroupInput.required = false;
+            bloodGroupInput.value = "";
+        }
+    });
+}
+
+form.addEventListener("submit", async function (event) {
+    event.preventDefault();
+
+    const message = form.querySelector(".form-message");
+
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
     }
-});
 
-// Submit a resource request
-router.post("/requests", async (req, res) => {
-    try {
-        const {
-            hospitalName,
-            resourceType,
-            quantity,
-            bloodGroup,
-            contact
-        } = req.body;
+    if (APP_CONFIG.DEMO_MODE) {
+        if (message) {
+            message.textContent =
+                "Demo only: Your resource request has not been saved.";
 
-        if (!hospitalName || !resourceType || !quantity || !contact) {
-            return res.status(400).json({
-                message: "Please provide all required details"
-            });
+            message.style.color = "#52644b";
         }
 
-        const docRef = await db.collection("resourceRequests").add({
-            hospitalName,
-            resourceType,
-            quantity,
-            bloodGroup: bloodGroup || null,
-            contact,
-            status: "Pending",
-            createdAt: new Date()
-        });
+        return;
+    }
 
-        res.status(201).json({
-            message: "Resource request submitted successfully",
-            id: docRef.id
-        });
+    try {
+        if (message) {
+            message.textContent = "Submitting your resource request...";
+            message.style.color = "#52644b";
+        }
+
+        const resourceData = Object.fromEntries(
+            new FormData(form).entries()
+        );
+
+        // Match the backend field name.
+        resourceData.hospitalName = resourceData.hospital;
+        delete resourceData.hospital;
+
+        resourceData.quantity = Number(resourceData.quantity);
+
+        // Blood group is not applicable to oxygen requests.
+        if (resourceData.resourceType === "Oxygen cylinders") {
+            resourceData.bloodGroup = null;
+        }
+
+        const response = await fetch(
+            `${APP_CONFIG.API_BASE_URL}${APP_CONFIG.API_ENDPOINTS.RESOURCE_REQUESTS}`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(resourceData)
+            }
+        );
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                result.message || "Unable to submit resource request."
+            );
+        }
+
+        if (message) {
+            message.textContent =
+                result.message ||
+                "Resource request submitted successfully.";
+
+            message.style.color = "green";
+        }
+
+        form.reset();
+
+        if (bloodGroupInput) {
+            bloodGroupInput.required = false;
+        }
+
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error("Resource request submission error:", error);
+
+        if (message) {
+            message.textContent =
+                error.message ||
+                "Something went wrong. Please try again.";
+
+            message.style.color = "red";
+        }
     }
 });
 
-module.exports = router;
+});
